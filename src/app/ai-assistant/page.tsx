@@ -12,6 +12,7 @@ import {
 } from "@ant-design/icons";
 import React from "react";
 
+import AiSettingsDialog from "./ai-settings-dialog";
 import useAiassistant from "./use-ai-assistannt";
 
 const starterPrompts = ["帮我梳理产品需求", "生成接口联调计划", "总结这段材料"];
@@ -25,6 +26,7 @@ const AppPages: React.FC = () => {
     activeConversationId,
     hasMessages,
     isSending,
+    settingsOpen,
     error,
     messageEndRef,
     startNewConversation,
@@ -32,6 +34,8 @@ const AppPages: React.FC = () => {
     handleKeyDown,
     handleInputChange,
     toggleSidebar,
+    openSettings,
+    closeSettings,
     handleConversationClick,
   } = useAiassistant();
 
@@ -134,6 +138,7 @@ const AppPages: React.FC = () => {
                 type="button"
                 aria-label="设置"
                 title="设置"
+                onClick={openSettings}
                 className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-[#1b1b32] hover:text-slate-100"
               >
                 <SettingOutlined />
@@ -235,6 +240,7 @@ const AppPages: React.FC = () => {
           </footer>
         </section>
       </div>
+      <AiSettingsDialog open={settingsOpen} onClose={closeSettings} />
     </main>
   );
 };

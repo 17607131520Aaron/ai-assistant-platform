@@ -39,8 +39,28 @@ type WebAiChatStreamError = {
   message?: string;
 };
 
+type AiAssistantSettings = {
+  requestUrl: string;
+  apiKeyToken: string;
+};
+
+type OpenAiCompatibleStreamChunk = {
+  choices?: Array<{
+    delta?: {
+      content?: string;
+    };
+    message?: {
+      content?: string;
+    };
+    text?: string;
+  }>;
+  delta?: string;
+  content?: string;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 const CHAT_STREAM_URL = `${API_BASE_URL.replace(/\/$/, "")}/web/ai/chat/stream`;
+const SETTINGS_STORAGE_KEY = "ai-assistant-settings";
 
 const createMessageId = () => Date.now() + Math.random();
 
@@ -68,10 +88,80 @@ const parseSseSegment = (segment: string): WebAiChatStreamEvent | null => {
 
   const rawData = dataLines.join("\n");
 
+  if (!rawData || rawData === "[DONE]") {
+    return null;
+  }
+
   return {
     event,
-    data: rawData ? JSON.parse(rawData) : null,
+    data: JSON.parse(rawData),
   };
+};
+
+const getAiAssistantSettings = (): AiAssistantSettings | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+
+  if (!rawSettings) {
+    return null;
+  }
+
+  try {
+    const settings = JSON.parse(rawSettings) as Partial<
+      AiAssistantSettings & { apiKey: string }
+    >;
+
+    return {
+      requestUrl: settings.requestUrl ?? "",
+      apiKeyToken: settings.apiKeyToken ?? settings.apiKey ?? "",
+    };
+  } catch {
+    return null;
+  }
+};
+
+const getCustomAiRequestConfig = () => {
+  const settings = getAiAssistantSettings();
+  const requestUrl = settings?.requestUrl.trim() ?? "";
+  const apiKeyToken = settings?.apiKeyToken.trim() ?? "";
+  const hasCustomValue = Boolean(requestUrl || apiKeyToken);
+
+  if (!hasCustomValue) {
+    return null;
+  }
+
+  if (!requestUrl || !apiKeyToken) {
+    throw new Error("请先完整配置自定义请求 URL 和 API Key Token。");
+  }
+
+  return {
+    requestUrl,
+    apiKeyToken,
+  };
+};
+
+const getStreamDelta = (data: unknown) => {
+  if (!isRecord(data)) {
+    return "";
+  }
+
+  const webAiChunk = data as WebAiChatStreamChunk;
+
+  if (typeof webAiChunk.delta === "string") {
+    return webAiChunk.delta;
+  }
+
+  if (typeof data.content === "string") {
+    return data.content;
+  }
+
+  const openAiChunk = data as OpenAiCompatibleStreamChunk;
+  const [choice] = openAiChunk.choices ?? [];
+
+  return choice?.delta?.content ?? choice?.message?.content ?? choice?.text ?? "";
 };
 
 const getErrorMessage = (value: unknown) => {
@@ -94,6 +184,7 @@ const useAiassistant = () => {
     useState<Conversation[]>(initialConversations);
   const [activeConversationId, setActiveConversationId] = useState(1);
   const [isSending, setIsSending] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -107,6 +198,14 @@ const useAiassistant = () => {
   //是否展开侧边栏
   const toggleSidebar = () => {
     setSidebarOpen((value) => !value);
+  };
+
+  const openSettings = () => {
+    setSettingsOpen(true);
+  };
+
+  const closeSettings = () => {
+    setSettingsOpen(false);
   };
 
   //点击历史对话列表
@@ -186,19 +285,27 @@ const useAiassistant = () => {
     abortControllerRef.current = controller;
 
     try {
-      const response = await fetch(CHAT_STREAM_URL, {
-        method: "POST",
-        headers: {
-          Accept: "text/event-stream",
-          "Content-Type": "application/json",
+      const customRequestConfig = getCustomAiRequestConfig();
+      const response = await fetch(
+        customRequestConfig?.requestUrl ?? CHAT_STREAM_URL,
+        {
+          method: "POST",
+          headers: {
+            Accept: "text/event-stream",
+            "Content-Type": "application/json",
+            ...(customRequestConfig
+              ? { Authorization: `Bearer ${customRequestConfig.apiKeyToken}` }
+              : {}),
+          },
+          body: JSON.stringify({
+            messages: requestMessages,
+            ...(customRequestConfig ? { stream: true } : {}),
+            reasoningEffort: "none",
+          }),
+          credentials: customRequestConfig ? "omit" : "include",
+          signal: controller.signal,
         },
-        body: JSON.stringify({
-          messages: requestMessages,
-          reasoningEffort: "none",
-        }),
-        credentials: "include",
-        signal: controller.signal,
-      });
+      );
 
       if (!response.ok || !response.body) {
         throw new Error(`AI 对话接口请求失败（${response.status}）`);
@@ -226,9 +333,8 @@ const useAiassistant = () => {
             continue;
           }
 
-          if (parsed.event === "chunk") {
-            const data = parsed.data as WebAiChatStreamChunk;
-            const delta = typeof data.delta === "string" ? data.delta : "";
+          if (parsed.event === "chunk" || parsed.event === "message") {
+            const delta = getStreamDelta(parsed.data);
 
             if (delta) {
               setMessages((current) =>
@@ -290,12 +396,15 @@ const useAiassistant = () => {
     messageEndRef,
     hasMessages,
     isSending,
+    settingsOpen,
     error,
     startNewConversation,
     sendMessage,
     handleKeyDown,
     handleInputChange,
     toggleSidebar,
+    openSettings,
+    closeSettings,
     handleConversationClick,
   };
 };
