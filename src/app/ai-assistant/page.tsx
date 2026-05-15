@@ -1,0 +1,306 @@
+"use client";
+
+import React from "react";
+
+type ChatMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+};
+
+type Conversation = {
+  id: number;
+  title: string;
+  updatedAt: string;
+};
+
+const initialConversations: Conversation[] = [
+  {
+    id: 1,
+    title: "产品需求梳理",
+    updatedAt: "刚刚",
+  },
+  {
+    id: 2,
+    title: "接口联调计划",
+    updatedAt: "昨天",
+  },
+];
+
+const starterPrompts = ["帮我梳理产品需求", "生成接口联调计划", "总结这段材料"];
+
+const AppPages: React.FC = () => {
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const [input, setInput] = React.useState("");
+  const [messages, setMessages] = React.useState<ChatMessage[]>([]);
+  const [conversations, setConversations] =
+    React.useState<Conversation[]>(initialConversations);
+  const [activeConversationId, setActiveConversationId] = React.useState(1);
+  const messageEndRef = React.useRef<HTMLDivElement>(null);
+
+  const hasMessages = messages.length > 0;
+
+  React.useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messages]);
+
+  function startNewConversation() {
+    const nextConversation = {
+      id: Date.now(),
+      title: "新的对话",
+      updatedAt: "刚刚",
+    };
+
+    setConversations((current) => [nextConversation, ...current]);
+    setActiveConversationId(nextConversation.id);
+    setMessages([]);
+    setInput("");
+  }
+
+  function sendMessage() {
+    const content = input.trim();
+
+    if (!content) {
+      return;
+    }
+
+    const userMessage: ChatMessage = {
+      id: Date.now(),
+      role: "user",
+      content,
+    };
+
+    const assistantMessage: ChatMessage = {
+      id: Date.now() + 1,
+      role: "assistant",
+      content:
+        "我已经收到你的消息。接下来可以接入真实模型接口，让这里返回实际回答。",
+    };
+
+    setMessages((current) => [...current, userMessage, assistantMessage]);
+    setInput("");
+    setConversations((current) =>
+      current.map((conversation) =>
+        conversation.id === activeConversationId
+          ? {
+              ...conversation,
+              title: content.slice(0, 18),
+              updatedAt: "刚刚",
+            }
+          : conversation,
+      ),
+    );
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  }
+
+  return (
+    <main className="h-screen min-h-0 overflow-hidden bg-[#09091b] text-slate-100">
+      <div className="flex h-full min-h-0">
+        <aside
+          className={`min-h-0 shrink-0 border-r border-[#24233b] bg-[#19192d] transition-[width] duration-200 ${
+            sidebarOpen ? "w-[288px]" : "w-0 overflow-hidden border-r-0"
+          }`}
+        >
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="flex h-[62px] items-center gap-2 border-b border-[#24233b] px-3">
+              <button
+                type="button"
+                onClick={startNewConversation}
+                className="h-10 flex-1 rounded-lg border border-[#4b3688] bg-[#2a1f4d] text-sm font-medium text-[#b58cff] transition hover:bg-[#33245f]"
+              >
+                + 新建对话
+              </button>
+              <button
+                type="button"
+                aria-label="收起侧边栏"
+                title="收起侧边栏"
+                onClick={() => setSidebarOpen(false)}
+                className="grid h-10 w-10 place-items-center rounded-lg border border-[#2d2c48] bg-[#202038] text-slate-400 transition hover:text-slate-100"
+              >
+                <span className="text-lg leading-none">↙</span>
+              </button>
+            </div>
+
+            <div className="p-3">
+              <label className="relative block">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
+                  ⌕
+                </span>
+                <input
+                  type="search"
+                  placeholder="搜索对话..."
+                  className="h-10 w-full rounded-lg border border-[#31304f] bg-[#252641] pl-9 pr-3 text-sm text-slate-200 outline-none placeholder:text-slate-500 focus:border-[#6d55c8]"
+                />
+              </label>
+            </div>
+
+            <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+              {conversations.length === 0 ? (
+                <div className="grid h-28 place-items-center text-center text-sm text-slate-500">
+                  暂无对话
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {conversations.map((conversation) => {
+                    const active = conversation.id === activeConversationId;
+
+                    return (
+                      <button
+                        key={conversation.id}
+                        type="button"
+                        onClick={() => setActiveConversationId(conversation.id)}
+                        className={`flex h-12 w-full items-center justify-between rounded-lg px-3 text-left transition ${
+                          active
+                            ? "bg-[#272643] text-slate-100"
+                            : "text-slate-400 hover:bg-[#202038] hover:text-slate-200"
+                        }`}
+                      >
+                        <span className="truncate text-sm">
+                          {conversation.title}
+                        </span>
+                        <span className="ml-3 shrink-0 text-xs text-slate-500">
+                          {conversation.updatedAt}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </nav>
+          </div>
+        </aside>
+
+        <section className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-[62px] shrink-0 items-center justify-between border-b border-[#24233b] bg-[#0d0d21] px-5">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+                title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+                onClick={() => setSidebarOpen((value) => !value)}
+                className="grid h-8 w-8 place-items-center rounded-md text-slate-400 transition hover:bg-[#1b1b32] hover:text-slate-100"
+              >
+                <span className="text-lg leading-none">≡</span>
+              </button>
+              <h1 className="text-sm font-semibold text-slate-100">
+                AI Assistant
+              </h1>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="文档"
+                title="文档"
+                className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-[#1b1b32] hover:text-slate-100"
+              >
+                □
+              </button>
+              <button
+                type="button"
+                aria-label="设置"
+                title="设置"
+                className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-[#1b1b32] hover:text-slate-100"
+              >
+                ⚙
+              </button>
+            </div>
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto bg-[#080819]">
+            {hasMessages ? (
+              <div className="flex min-h-full w-full flex-col justify-end px-5 py-6 sm:px-8 lg:px-12 lg:py-8">
+                <div className="flex flex-col gap-6">
+                  {messages.map((message) => {
+                    const isUser = message.role === "user";
+
+                    return (
+                      <div
+                        key={message.id}
+                        className={`flex items-end gap-3 ${
+                          isUser ? "justify-end" : "justify-start"
+                        }`}
+                      >
+                        {!isUser && (
+                          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[#34325d] bg-[#20203a] text-xs font-semibold text-[#b69cff]">
+                            AI
+                          </div>
+                        )}
+                        <article
+                          className={`max-w-[min(78%,720px)] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${
+                            isUser
+                              ? "rounded-br-md border border-[#6d55c8]/60 bg-[#3a2a65] text-slate-50"
+                              : "rounded-bl-md border border-[#2c2b48] bg-[#17172b] text-slate-300"
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap break-words">
+                            {message.content}
+                          </p>
+                        </article>
+                      </div>
+                    );
+                  })}
+                  <div ref={messageEndRef} />
+                </div>
+              </div>
+            ) : (
+              <div className="mx-auto grid h-full w-full max-w-5xl place-items-center px-5 sm:px-8 lg:px-12">
+                <div className="w-full pb-24 text-center">
+                  <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-[#34325d] bg-[#20203a] text-2xl text-[#9a72ff]">
+                    ✦
+                  </div>
+                  <p className="mt-5 text-base font-semibold text-slate-100">
+                    开始新对话
+                  </p>
+                  <div className="mt-6 grid gap-2 sm:grid-cols-3">
+                    {starterPrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => setInput(prompt)}
+                        className="min-h-11 rounded-lg border border-[#2d2c48] bg-[#141429] px-3 py-2 text-left text-sm text-slate-400 transition hover:border-[#5d45b4] hover:bg-[#1d1b37] hover:text-slate-100"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <footer className="shrink-0 border-t border-[#24233b] bg-[#0d0d21] px-5 py-4 sm:px-8 lg:px-12">
+            <div className="relative w-full">
+              <textarea
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={1}
+                placeholder="输入消息...（Enter 发送，Shift+Enter 换行）"
+                className="max-h-36 min-h-14 w-full resize-none rounded-2xl border border-[#3a3369] bg-[#18182b] py-4 pl-4 pr-14 text-sm leading-6 text-slate-100 shadow-[0_12px_40px_rgba(0,0,0,0.22)] outline-none placeholder:text-slate-500 focus:border-[#7b61dd]"
+              />
+              <button
+                type="button"
+                aria-label="发送"
+                title="发送"
+                onClick={sendMessage}
+                disabled={!input.trim()}
+                className="absolute bottom-4 right-3 grid h-8 w-8 place-items-center rounded-full bg-[#332c68] text-slate-300 transition enabled:hover:bg-[#7b61dd] enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                ↑
+              </button>
+            </div>
+          </footer>
+        </section>
+      </div>
+    </main>
+  );
+};
+
+export default AppPages;
