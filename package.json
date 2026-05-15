@@ -1,0 +1,45 @@
+{
+  "name": "ai-assistant-platform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.63",
+    "@ai-sdk/react": "^3.0.184",
+    "@assistant-ui/react": "^0.14.5",
+    "@uidotdev/usehooks": "^2.4.1",
+    "ahooks": "^3.9.7",
+    "ai": "^6.0.182",
+    "dayjs": "^1.11.20",
+    "dexie": "^4.4.2",
+    "echarts": "^6.0.0",
+    "echarts-for-react": "^3.0.6",
+    "js-cookie": "^3.0.5",
+    "next": "16.2.6",
+    "ollama-ai-provider": "^1.2.0",
+    "react": "19.2.4",
+    "react-barcode": "^1.6.1",
+    "react-dom": "19.2.4",
+    "react-virtualized": "^9.22.6",
+    "socket.io-client": "^4.8.3",
+    "streamdown": "^2.5.0",
+    "three": "^0.184.0",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
