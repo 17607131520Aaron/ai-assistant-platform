@@ -1,8 +1,22 @@
+import { existsSync, readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
 import type { NextConfig } from "next";
+
+const appEnv = process.env.APP_ENV ?? process.env.NODE_ENV ?? "development";
+const appEnvFile = `.env.${appEnv}`;
+
+if (existsSync(appEnvFile)) {
+  const envConfig = parseEnv(readFileSync(appEnvFile, "utf8"));
+
+  for (const [key, value] of Object.entries(envConfig)) {
+    process.env[key] = value;
+  }
+}
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
   reactStrictMode: true,
+  typedRoutes: true,
   poweredByHeader: false,
   compress: true,
   crossOrigin: "anonymous",
@@ -34,15 +48,29 @@ const nextConfig: NextConfig = {
 
   serverExternalPackages: ["bcrypt"],
   async rewrites() {
-    if (!process.env.NEXT_PUBLIC_API_PROXY_TARGET) {
-      throw new Error("请设置NEXT_PUBLIC_API_PROXY_TARGET环境变量！");
+    const apiProxyTarget = process.env.NEXT_PUBLIC_API_PROXY_TARGET;
+    console.log("====================================");
+    console.log(apiProxyTarget, "apiProxyTarget");
+    console.log("====================================");
+
+    if (!apiProxyTarget) {
+      if (appEnv !== "production") {
+        console.warn(
+          `NEXT_PUBLIC_API_PROXY_TARGET is not set in ${appEnvFile}; /api rewrites are disabled.`,
+        );
+        return [];
+      }
+
+      throw new Error(
+        `请在 ${appEnvFile} 中设置 NEXT_PUBLIC_API_PROXY_TARGET 环境变量！`,
+      );
     }
 
     return {
       afterFiles: [
         {
           source: "/api/:path*",
-          destination: `${process.env.NEXT_PUBLIC_API_PROXY_TARGET}/:path*`,
+          destination: `${apiProxyTarget}/:path*`,
         },
       ],
     };
@@ -75,7 +103,6 @@ const nextConfig: NextConfig = {
 
   experimental: {
     typedEnv: true,
-    typedRoutes: true,
     proxyTimeout: 30000, // 30秒代理超时
   },
 };
