@@ -79,8 +79,17 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        source: "/api/web/ai/chat/stream",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-transform",
+          },
+        ],
+      },
+      {
         // 静态API响应缓存策略
-        source: "/api/:path((?!auth|login|register|me).*)",
+        source: "/api/:path((?!auth|login|register|me|web/ai/chat/stream).*)",
         headers: [
           {
             key: "Cache-Control",
@@ -103,7 +112,7 @@ const nextConfig: NextConfig = {
 
   experimental: {
     typedEnv: true,
-    proxyTimeout: 30000, // 30秒代理超时
+    proxyTimeout: 120000, // 对齐 AI 流式接口较长响应
   },
 };
 

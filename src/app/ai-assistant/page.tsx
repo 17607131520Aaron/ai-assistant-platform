@@ -14,31 +14,6 @@ import React from "react";
 
 import useAiassistant from "./use-ai-assistannt";
 
-type ChatMessage = {
-  id: number;
-  role: "user" | "assistant";
-  content: string;
-};
-
-type Conversation = {
-  id: number;
-  title: string;
-  updatedAt: string;
-};
-
-const initialConversations: Conversation[] = [
-  {
-    id: 1,
-    title: "产品需求梳理",
-    updatedAt: "刚刚",
-  },
-  {
-    id: 2,
-    title: "接口联调计划",
-    updatedAt: "昨天",
-  },
-];
-
 const starterPrompts = ["帮我梳理产品需求", "生成接口联调计划", "总结这段材料"];
 
 const AppPages: React.FC = () => {
@@ -49,6 +24,8 @@ const AppPages: React.FC = () => {
     conversations,
     activeConversationId,
     hasMessages,
+    isSending,
+    error,
     messageEndRef,
     startNewConversation,
     sendMessage,
@@ -191,7 +168,8 @@ const AppPages: React.FC = () => {
                           }`}
                         >
                           <p className="whitespace-pre-wrap break-words">
-                            {message.content}
+                            {message.content ||
+                              (isUser ? "" : "正在生成回复...")}
                           </p>
                         </article>
                       </div>
@@ -233,7 +211,11 @@ const AppPages: React.FC = () => {
                 onChange={(event) => handleInputChange(event.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={1}
-                placeholder="输入消息...（Enter 发送，Shift+Enter 换行）"
+                placeholder={
+                  isSending
+                    ? "正在等待回复..."
+                    : "输入消息...（Enter 发送，Shift+Enter 换行）"
+                }
                 className="max-h-36 min-h-14 w-full resize-none rounded-2xl border border-[#3a3369] bg-[#18182b] py-4 pl-4 pr-14 text-sm leading-6 text-slate-100 shadow-[0_12px_40px_rgba(0,0,0,0.22)] outline-none placeholder:text-slate-500 focus:border-[#7b61dd]"
               />
               <button
@@ -241,12 +223,15 @@ const AppPages: React.FC = () => {
                 aria-label="发送"
                 title="发送"
                 onClick={sendMessage}
-                disabled={!input.trim()}
+                disabled={!input.trim() || isSending}
                 className="absolute bottom-4 right-3 grid h-8 w-8 place-items-center rounded-full bg-[#332c68] text-slate-300 transition enabled:hover:bg-[#7b61dd] enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <SendOutlined />
               </button>
             </div>
+            {error && (
+              <p className="mt-2 text-xs leading-5 text-rose-300">{error}</p>
+            )}
           </footer>
         </section>
       </div>
