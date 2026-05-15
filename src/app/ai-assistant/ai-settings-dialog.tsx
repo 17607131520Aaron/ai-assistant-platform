@@ -20,78 +20,133 @@ import {
   Typography,
   theme,
 } from "antd";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+
+import {
+  deleteApiKeyConfig,
+  fetchApiKeyConfig,
+  migrateLegacyLocalSettings,
+  saveApiKeyConfig,
+  type WebAiApiKeyConfig,
+} from "@/lib/ai-api-key-config";
+import { getAccessToken } from "@/lib/auth-token";
 
 type AiSettingsDialogProps = {
   open: boolean;
   onClose: () => void;
+  onConfigSaved?: () => void;
 };
 
-type AiSettings = {
+type FormSettings = {
   requestUrl: string;
+  model: string;
   apiKeyToken: string;
 };
 
-const SETTINGS_STORAGE_KEY = "ai-assistant-settings";
-
-const defaultSettings: AiSettings = {
+const defaultFormSettings: FormSettings = {
   requestUrl: "",
+  model: "",
   apiKeyToken: "",
-};
-
-const loadSettings = (): AiSettings => {
-  if (typeof window === "undefined") {
-    return defaultSettings;
-  }
-
-  const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-
-  if (!rawSettings) {
-    return defaultSettings;
-  }
-
-  try {
-    const parsedSettings = JSON.parse(rawSettings) as Partial<
-      AiSettings & { apiKey: string }
-    >;
-
-    return {
-      requestUrl: parsedSettings.requestUrl ?? defaultSettings.requestUrl,
-      apiKeyToken: parsedSettings.apiKeyToken ?? parsedSettings.apiKey ?? "",
-    };
-  } catch {
-    return defaultSettings;
-  }
 };
 
 const AiSettingsDialog: React.FC<AiSettingsDialogProps> = ({
   open,
   onClose,
+  onConfigSaved,
 }) => {
-  const [settings, setSettings] = useState<AiSettings>(() => loadSettings());
+  const [settings, setSettings] = useState<FormSettings>(defaultFormSettings);
+  const [remoteConfig, setRemoteConfig] = useState<WebAiApiKeyConfig | null>(
+    null,
+  );
   const [activeTab, setActiveTab] = useState("ai");
   const [gitlabToken, setGitlabToken] = useState("");
   const [autoPublish, setAutoPublish] = useState(true);
   const [themeMode, setThemeMode] = useState("dark");
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [testState, setTestState] = useState<"idle" | "missing" | "ready">(
     "idle",
   );
 
   const configured = Boolean(
-    settings.requestUrl.trim() && settings.apiKeyToken.trim(),
+    settings.requestUrl.trim() &&
+      (settings.model.trim() || remoteConfig?.model) &&
+      (settings.apiKeyToken.trim() || remoteConfig?.hasApiKeyToken),
   );
 
   const resetFeedback = () => {
     setSaved(false);
     setTestState("idle");
+    setError("");
   };
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadConfig = async () => {
+      setLoading(true);
+      setError("");
+      resetFeedback();
+
+      try {
+        if (!getAccessToken()) {
+          setRemoteConfig(null);
+          setSettings(defaultFormSettings);
+          setError("请先登录后再配置 AI API Key");
+          return;
+        }
+
+        await migrateLegacyLocalSettings();
+        const config = await fetchApiKeyConfig();
+
+        if (cancelled) {
+          return;
+        }
+
+        setRemoteConfig(config);
+        setSettings({
+          requestUrl: config.requestUrl,
+          model: config.model,
+          apiKeyToken: "",
+        });
+      } catch (exception) {
+        if (!cancelled) {
+          setError(
+            exception instanceof Error
+              ? exception.message
+              : "加载 AI API Key 配置失败",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadConfig();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const handleRequestUrlChange = (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     resetFeedback();
     setSettings((current) => ({ ...current, requestUrl: event.target.value }));
+  };
+
+  const handleModelChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    resetFeedback();
+    setSettings((current) => ({ ...current, model: event.target.value }));
   };
 
   const handleApiKeyTokenChange = (
@@ -104,15 +159,83 @@ const AiSettingsDialog: React.FC<AiSettingsDialogProps> = ({
     }));
   };
 
-  const handleSave = () => {
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-    setSaved(true);
-    setTestState("idle");
+  const handleSave = async () => {
+    const requestUrl = settings.requestUrl.trim();
+    const model = settings.model.trim() || remoteConfig?.model?.trim() || "";
+    const apiKeyToken = settings.apiKeyToken.trim();
+
+    if (!requestUrl) {
+      setError("请填写请求 URL");
+      setTestState("missing");
+      return;
+    }
+
+    if (!model) {
+      setError("请填写模型名称");
+      setTestState("missing");
+      return;
+    }
+
+    if (!apiKeyToken && !remoteConfig?.hasApiKeyToken) {
+      setError("请填写 API Key Token");
+      setTestState("missing");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+
+    try {
+      const config = await saveApiKeyConfig(
+        requestUrl,
+        model,
+        apiKeyToken || undefined,
+      );
+      setRemoteConfig(config);
+      setSettings({
+        requestUrl: config.requestUrl,
+        model: config.model,
+        apiKeyToken: "",
+      });
+      setSaved(true);
+      setTestState("idle");
+      onConfigSaved?.();
+    } catch (exception) {
+      setError(
+        exception instanceof Error ? exception.message : "保存配置失败",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setSaving(true);
+    setError("");
+
+    try {
+      const config = await deleteApiKeyConfig();
+      setRemoteConfig(config);
+      setSettings(defaultFormSettings);
+      setSaved(false);
+      setTestState("idle");
+      onConfigSaved?.();
+    } catch (exception) {
+      setError(
+        exception instanceof Error ? exception.message : "清除配置失败",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleTest = () => {
     setTestState(configured ? "ready" : "missing");
   };
+
+  const apiKeyPlaceholder = remoteConfig?.hasApiKeyToken
+    ? `已配置 ${remoteConfig.apiKeyTokenMasked}，输入新值可覆盖`
+    : "输入 API Key Token...";
 
   const aiConfigContent = (
     <Form layout="vertical" requiredMark={false} className="pt-1">
@@ -121,6 +244,11 @@ const AiSettingsDialog: React.FC<AiSettingsDialogProps> = ({
         <Typography.Text type={configured ? "success" : "secondary"}>
           {configured ? "已配置" : "未配置"}
         </Typography.Text>
+        {remoteConfig?.updatedAt && (
+          <Typography.Text type="secondary" className="text-xs">
+            更新于 {new Date(remoteConfig.updatedAt).toLocaleString()}
+          </Typography.Text>
+        )}
       </div>
 
       <Form.Item label="请求 URL">
@@ -128,7 +256,17 @@ const AiSettingsDialog: React.FC<AiSettingsDialogProps> = ({
           type="url"
           value={settings.requestUrl}
           onChange={handleRequestUrlChange}
-          placeholder="输入自定义请求 URL..."
+          placeholder="https://api.openai.com/v1/chat/completions"
+          disabled={loading || saving}
+        />
+      </Form.Item>
+
+      <Form.Item label="模型名称">
+        <Input
+          value={settings.model}
+          onChange={handleModelChange}
+          placeholder="例如 gpt-4o-mini、sensenova-6.7-flash-lite"
+          disabled={loading || saving}
         />
       </Form.Item>
 
@@ -137,29 +275,58 @@ const AiSettingsDialog: React.FC<AiSettingsDialogProps> = ({
           <Input.Password
             value={settings.apiKeyToken}
             onChange={handleApiKeyTokenChange}
-            placeholder="输入 API Key Token..."
+            placeholder={apiKeyPlaceholder}
+            disabled={loading || saving}
           />
-          <Button icon={<SaveOutlined />} onClick={handleSave}>
+          <Button
+            icon={<SaveOutlined />}
+            onClick={() => void handleSave()}
+            loading={saving}
+            disabled={loading}
+          >
             保存
           </Button>
         </Space.Compact>
       </Form.Item>
 
       <Space size={12} align="center" wrap>
-        <Button size="small" type="primary" ghost onClick={handleTest}>
+        <Button
+          size="small"
+          type="primary"
+          ghost
+          onClick={handleTest}
+          disabled={loading || saving}
+        >
           测试连接
         </Button>
+        {remoteConfig?.hasApiKeyToken && (
+          <Button
+            size="small"
+            danger
+            ghost
+            onClick={() => void handleClear()}
+            loading={saving}
+            disabled={loading}
+          >
+            清除配置
+          </Button>
+        )}
         {saved && (
           <Typography.Text type="success" className="text-xs">
-            配置已保存
+            配置已保存到服务端
           </Typography.Text>
         )}
-        {testState === "missing" && (
+        {error && (
+          <Typography.Text type="danger" className="text-xs">
+            {error}
+          </Typography.Text>
+        )}
+        {testState === "missing" && !error && (
           <Typography.Text type="warning" className="text-xs">
-            请先填写请求 URL 和 API Key Token
+            请先填写请求 URL、模型名称和 API Key Token
           </Typography.Text>
         )}
-        {testState === "ready" && (
+        {testState === "ready" && !error && (
           <Typography.Text type="success" className="text-xs">
             配置项完整，可发起连接测试
           </Typography.Text>
@@ -296,7 +463,13 @@ const AiSettingsDialog: React.FC<AiSettingsDialogProps> = ({
                   <span>AI 配置</span>
                 </Space>
               ),
-              children: aiConfigContent,
+              children: loading ? (
+                <Typography.Text type="secondary" className="text-sm">
+                  正在加载配置...
+                </Typography.Text>
+              ) : (
+                aiConfigContent
+              ),
             },
             {
               key: "gitlab",

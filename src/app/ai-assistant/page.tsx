@@ -8,9 +8,15 @@ import {
   RobotOutlined,
   SearchOutlined,
   SendOutlined,
+  LogoutOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import React from "react";
+
+import AuthGuard from "@/components/auth-guard";
+import { clearAccessToken } from "@/lib/auth-token";
 
 import AiSettingsDialog from "./ai-settings-dialog";
 import useAiassistant from "./use-ai-assistannt";
@@ -18,6 +24,7 @@ import useAiassistant from "./use-ai-assistannt";
 const starterPrompts = ["帮我梳理产品需求", "生成接口联调计划", "总结这段材料"];
 
 const AppPages: React.FC = () => {
+  const router = useRouter();
   const {
     sidebarOpen,
     input,
@@ -36,10 +43,17 @@ const AppPages: React.FC = () => {
     toggleSidebar,
     openSettings,
     closeSettings,
+    handleConfigSaved,
     handleConversationClick,
   } = useAiassistant();
 
+  const handleLogout = () => {
+    clearAccessToken();
+    router.replace("/login" as Route);
+  };
+
   return (
+    <AuthGuard>
     <main className="h-screen min-h-0 overflow-hidden bg-[#09091b] text-slate-100">
       <div className="flex h-full min-h-0">
         <aside
@@ -143,6 +157,15 @@ const AppPages: React.FC = () => {
               >
                 <SettingOutlined />
               </button>
+              <button
+                type="button"
+                aria-label="退出登录"
+                title="退出登录"
+                onClick={handleLogout}
+                className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-[#1b1b32] hover:text-slate-100"
+              >
+                <LogoutOutlined />
+              </button>
             </div>
           </header>
 
@@ -150,8 +173,12 @@ const AppPages: React.FC = () => {
             {hasMessages ? (
               <div className="flex min-h-full w-full flex-col justify-end px-5 py-6 sm:px-8 lg:px-12 lg:py-8">
                 <div className="flex flex-col gap-6">
-                  {messages.map((message) => {
+                  {messages.map((message, index) => {
                     const isUser = message.role === "user";
+                    const isStreamingAssistant =
+                      !isUser &&
+                      isSending &&
+                      index === messages.length - 1;
 
                     return (
                       <div
@@ -172,10 +199,31 @@ const AppPages: React.FC = () => {
                               : "rounded-bl-md border border-[#2c2b48] bg-[#17172b] text-slate-300"
                           }`}
                         >
+                          {!isUser && message.reasoning && (
+                            <details className="mb-3 rounded-lg border border-[#2a2948] bg-[#10101f] px-3 py-2">
+                              <summary className="cursor-pointer select-none text-xs text-slate-500">
+                                思考过程
+                              </summary>
+                              <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">
+                                {message.reasoning}
+                              </p>
+                            </details>
+                          )}
                           <p className="whitespace-pre-wrap break-words">
                             {message.content ||
-                              (isUser ? "" : "正在生成回复...")}
+                              (isUser
+                                ? ""
+                                : message.reasoning
+                                  ? ""
+                                  : "正在生成回复...")}
                           </p>
+                          {isStreamingAssistant &&
+                            !message.content &&
+                            message.reasoning && (
+                              <p className="mt-1 text-xs text-slate-500">
+                                正在组织最终回复...
+                              </p>
+                            )}
                         </article>
                       </div>
                     );
@@ -240,8 +288,13 @@ const AppPages: React.FC = () => {
           </footer>
         </section>
       </div>
-      <AiSettingsDialog open={settingsOpen} onClose={closeSettings} />
+      <AiSettingsDialog
+        open={settingsOpen}
+        onClose={closeSettings}
+        onConfigSaved={handleConfigSaved}
+      />
     </main>
+    </AuthGuard>
   );
 };
 

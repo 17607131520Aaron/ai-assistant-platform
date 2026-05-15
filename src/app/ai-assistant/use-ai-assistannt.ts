@@ -5,6 +5,7 @@ type ChatMessage = {
   id: number;
   role: "user" | "assistant";
   content: string;
+  reasoning?: string;
 };
 
 type Conversation = {
@@ -31,36 +32,21 @@ type WebAiChatStreamEvent = {
   data: unknown;
 };
 
-type WebAiChatStreamChunk = {
-  delta?: string;
-};
-
 type WebAiChatStreamError = {
   message?: string;
 };
 
-type AiAssistantSettings = {
-  requestUrl: string;
-  apiKeyToken: string;
-};
+import { invalidateCustomAiRequestConfigCache } from "@/lib/ai-api-key-config";
+import { getAccessToken } from "@/lib/auth-token";
 
-type OpenAiCompatibleStreamChunk = {
-  choices?: Array<{
-    delta?: {
-      content?: string;
-    };
-    message?: {
-      content?: string;
-    };
-    text?: string;
-  }>;
-  delta?: string;
-  content?: string;
-};
+import {
+  extractStreamDelta,
+  extractStreamErrorMessage,
+  extractStreamReasoning,
+} from "@/lib/stream-delta";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 const CHAT_STREAM_URL = `${API_BASE_URL.replace(/\/$/, "")}/web/ai/chat/stream`;
-const SETTINGS_STORAGE_KEY = "ai-assistant-settings";
 
 const createMessageId = () => Date.now() + Math.random();
 
@@ -92,76 +78,14 @@ const parseSseSegment = (segment: string): WebAiChatStreamEvent | null => {
     return null;
   }
 
-  return {
-    event,
-    data: JSON.parse(rawData),
-  };
-};
-
-const getAiAssistantSettings = (): AiAssistantSettings | null => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-
-  if (!rawSettings) {
-    return null;
-  }
-
   try {
-    const settings = JSON.parse(rawSettings) as Partial<
-      AiAssistantSettings & { apiKey: string }
-    >;
-
     return {
-      requestUrl: settings.requestUrl ?? "",
-      apiKeyToken: settings.apiKeyToken ?? settings.apiKey ?? "",
+      event,
+      data: JSON.parse(rawData),
     };
   } catch {
     return null;
   }
-};
-
-const getCustomAiRequestConfig = () => {
-  const settings = getAiAssistantSettings();
-  const requestUrl = settings?.requestUrl.trim() ?? "";
-  const apiKeyToken = settings?.apiKeyToken.trim() ?? "";
-  const hasCustomValue = Boolean(requestUrl || apiKeyToken);
-
-  if (!hasCustomValue) {
-    return null;
-  }
-
-  if (!requestUrl || !apiKeyToken) {
-    throw new Error("请先完整配置自定义请求 URL 和 API Key Token。");
-  }
-
-  return {
-    requestUrl,
-    apiKeyToken,
-  };
-};
-
-const getStreamDelta = (data: unknown) => {
-  if (!isRecord(data)) {
-    return "";
-  }
-
-  const webAiChunk = data as WebAiChatStreamChunk;
-
-  if (typeof webAiChunk.delta === "string") {
-    return webAiChunk.delta;
-  }
-
-  if (typeof data.content === "string") {
-    return data.content;
-  }
-
-  const openAiChunk = data as OpenAiCompatibleStreamChunk;
-  const [choice] = openAiChunk.choices ?? [];
-
-  return choice?.delta?.content ?? choice?.message?.content ?? choice?.text ?? "";
 };
 
 const getErrorMessage = (value: unknown) => {
@@ -206,6 +130,10 @@ const useAiassistant = () => {
 
   const closeSettings = () => {
     setSettingsOpen(false);
+  };
+
+  const handleConfigSaved = () => {
+    invalidateCustomAiRequestConfigCache();
   };
 
   //点击历史对话列表
@@ -258,6 +186,7 @@ const useAiassistant = () => {
       id: createMessageId(),
       role: "assistant",
       content: "",
+      reasoning: "",
     };
 
     const requestMessages = [...messages, userMessage].map((message) => ({
@@ -285,27 +214,23 @@ const useAiassistant = () => {
     abortControllerRef.current = controller;
 
     try {
-      const customRequestConfig = getCustomAiRequestConfig();
-      const response = await fetch(
-        customRequestConfig?.requestUrl ?? CHAT_STREAM_URL,
-        {
-          method: "POST",
-          headers: {
-            Accept: "text/event-stream",
-            "Content-Type": "application/json",
-            ...(customRequestConfig
-              ? { Authorization: `Bearer ${customRequestConfig.apiKeyToken}` }
-              : {}),
-          },
-          body: JSON.stringify({
-            messages: requestMessages,
-            ...(customRequestConfig ? { stream: true } : {}),
-            reasoningEffort: "none",
-          }),
-          credentials: customRequestConfig ? "omit" : "include",
-          signal: controller.signal,
+      const accessToken = getAccessToken();
+      const response = await fetch(CHAT_STREAM_URL, {
+        method: "POST",
+        headers: {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+          ...(accessToken
+            ? { Authorization: `Bearer ${accessToken}` }
+            : {}),
         },
-      );
+        body: JSON.stringify({
+          messages: requestMessages,
+          reasoningEffort: "none",
+        }),
+        credentials: "omit",
+        signal: controller.signal,
+      });
 
       if (!response.ok || !response.body) {
         throw new Error(`AI 对话接口请求失败（${response.status}）`);
@@ -333,14 +258,27 @@ const useAiassistant = () => {
             continue;
           }
 
-          if (parsed.event === "chunk" || parsed.event === "message") {
-            const delta = getStreamDelta(parsed.data);
+          if (
+            parsed.event === "chunk" ||
+            parsed.event === "message" ||
+            parsed.event === "content_block_delta"
+          ) {
+            const delta = extractStreamDelta(parsed.data);
+            const reasoning = extractStreamReasoning(parsed.data);
 
-            if (delta) {
+            if (delta || reasoning) {
               setMessages((current) =>
                 current.map((message) =>
                   message.id === assistantMessage.id
-                    ? { ...message, content: message.content + delta }
+                    ? {
+                        ...message,
+                        content: delta
+                          ? message.content + delta
+                          : message.content,
+                        reasoning: reasoning
+                          ? `${message.reasoning ?? ""}${reasoning}`
+                          : message.reasoning,
+                      }
                     : message,
                 ),
               );
@@ -348,9 +286,15 @@ const useAiassistant = () => {
           }
 
           if (parsed.event === "error") {
+            const streamError = extractStreamErrorMessage(parsed.data);
             throw new Error(
-              getErrorMessage(parsed.data as WebAiChatStreamError),
+              streamError ??
+                getErrorMessage(parsed.data as WebAiChatStreamError),
             );
+          }
+
+          if (parsed.event === "done") {
+            break;
           }
         }
       }
@@ -405,6 +349,7 @@ const useAiassistant = () => {
     toggleSidebar,
     openSettings,
     closeSettings,
+    handleConfigSaved,
     handleConversationClick,
   };
 };
