@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { Suspense } from "react";
+
+import RequestLoadingProvider from "@/components/request-loading-provider";
+
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,7 +34,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <Suspense fallback={null}>
-          <AntdRegistry>{children}</AntdRegistry>
+          <AntdRegistry>
+            <RequestLoadingProvider>{children}</RequestLoadingProvider>
+          </AntdRegistry>
         </Suspense>
       </body>
     </html>

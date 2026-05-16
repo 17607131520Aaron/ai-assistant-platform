@@ -23,11 +23,11 @@ type WebRegisterResponse = {
 };
 
 export const loginWebUser = async (payload: WebLoginPayload): Promise<void> => {
-  const data = await apiRequest<WebLoginResponse>("/web/users/login", {
-    method: "POST",
-    body: JSON.stringify(payload),
-    auth: false,
-  });
+  const data = await apiRequest.post<WebLoginResponse>(
+    "/web/users/login",
+    payload,
+    { auth: false, showLoading: false },
+  );
 
   setAccessToken(data.accessToken);
 };
@@ -35,11 +35,11 @@ export const loginWebUser = async (payload: WebLoginPayload): Promise<void> => {
 export const registerWebUser = async (
   payload: WebRegisterPayload,
 ): Promise<void> => {
-  const data = await apiRequest<WebRegisterResponse>("/web/users/register", {
-    method: "POST",
-    body: JSON.stringify(payload),
-    auth: false,
-  });
+  const data = await apiRequest.post<WebRegisterResponse>(
+    "/web/users/register",
+    payload,
+    { auth: false, showLoading: false },
+  );
 
   setAccessToken(data.token);
 };

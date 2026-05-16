@@ -256,7 +256,7 @@ const AiSettingsDialog: React.FC<AiSettingsDialogProps> = ({
           type="url"
           value={settings.requestUrl}
           onChange={handleRequestUrlChange}
-          placeholder="https://api.openai.com/v1/chat/completions"
+          placeholder="https://api.sensenova.cn/v1/llm/chat-completions"
           disabled={loading || saving}
         />
       </Form.Item>
@@ -265,7 +265,7 @@ const AiSettingsDialog: React.FC<AiSettingsDialogProps> = ({
         <Input
           value={settings.model}
           onChange={handleModelChange}
-          placeholder="例如 gpt-4o-mini、sensenova-6.7-flash-lite"
+          placeholder="SenseNova-V6.7-Flash-Lite（以控制台模型 ID 为准）"
           disabled={loading || saving}
         />
       </Form.Item>

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "cross-env APP_ENV=development next dev",
     "dev:test": "cross-env APP_ENV=test next dev",
+    "dev:production": "cross-env APP_ENV=production next dev",
     "dev:prod-env": "cross-env APP_ENV=production next dev",
     "build": "cross-env APP_ENV=production next build",
     "build:test": "cross-env APP_ENV=test next build",

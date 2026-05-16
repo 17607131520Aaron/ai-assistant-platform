@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  CloseOutlined,
   FileTextOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  PictureOutlined,
   PlusOutlined,
   RobotOutlined,
   SearchOutlined,
@@ -18,6 +20,8 @@ import React from "react";
 import AuthGuard from "@/components/auth-guard";
 import { clearAccessToken } from "@/lib/auth-token";
 
+import { CHAT_IMAGE_ACCEPT } from "@/lib/ai-chat-image";
+
 import AiSettingsDialog from "./ai-settings-dialog";
 import useAiassistant from "./use-ai-assistannt";
 
@@ -28,18 +32,25 @@ const AppPages: React.FC = () => {
   const {
     sidebarOpen,
     input,
+    pendingImages,
     messages,
     conversations,
     activeConversationId,
     hasMessages,
     isSending,
+    canSend,
     settingsOpen,
     error,
     messageEndRef,
+    fileInputRef,
     startNewConversation,
     sendMessage,
     handleKeyDown,
     handleInputChange,
+    openImagePicker,
+    handleImageFilesSelected,
+    handlePaste,
+    removePendingImage,
     toggleSidebar,
     openSettings,
     closeSettings,
@@ -199,6 +210,29 @@ const AppPages: React.FC = () => {
                               : "rounded-bl-md border border-[#2c2b48] bg-[#17172b] text-slate-300"
                           }`}
                         >
+                          {isUser && message.images && message.images.length > 0 && (
+                            <div
+                              className={`mb-3 grid gap-2 ${
+                                message.images.length > 1
+                                  ? "grid-cols-2"
+                                  : "grid-cols-1"
+                              }`}
+                            >
+                              {message.images.map((image) => (
+                                <div
+                                  key={image.url ?? image.previewUrl}
+                                  className="relative overflow-hidden rounded-lg border border-[#5a4a8f]/50 bg-[#2a2248]"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={image.url ?? image.previewUrl}
+                                    alt="用户上传的图片"
+                                    className="max-h-56 w-full object-cover"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           {!isUser && message.reasoning && (
                             <details className="mb-3 rounded-lg border border-[#2a2948] bg-[#10101f] px-3 py-2">
                               <summary className="cursor-pointer select-none text-xs text-slate-500">
@@ -209,14 +243,19 @@ const AppPages: React.FC = () => {
                               </p>
                             </details>
                           )}
-                          <p className="whitespace-pre-wrap break-words">
-                            {message.content ||
-                              (isUser
-                                ? ""
-                                : message.reasoning
+                          {(message.content ||
+                            (!isUser &&
+                              !message.reasoning &&
+                              !message.images?.length)) && (
+                            <p className="whitespace-pre-wrap break-words">
+                              {message.content ||
+                                (isUser
                                   ? ""
-                                  : "正在生成回复...")}
-                          </p>
+                                  : message.reasoning
+                                    ? ""
+                                    : "正在生成回复...")}
+                            </p>
+                          )}
                           {isStreamingAssistant &&
                             !message.content &&
                             message.reasoning && (
@@ -258,26 +297,73 @@ const AppPages: React.FC = () => {
           </div>
 
           <footer className="shrink-0 border-t border-[#24233b] bg-[#0d0d21] px-5 py-4 sm:px-8 lg:px-12">
-            <div className="relative w-full">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={CHAT_IMAGE_ACCEPT}
+              multiple
+              className="hidden"
+              onChange={handleImageFilesSelected}
+            />
+
+            {pendingImages.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {pendingImages.map((image) => (
+                  <div
+                    key={image.id}
+                    className="group relative h-20 w-20 overflow-hidden rounded-xl border border-[#4b3f7f] bg-[#1a1930]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={image.previewUrl}
+                      alt="待发送图片"
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      aria-label="移除图片"
+                      title="移除图片"
+                      onClick={() => removePendingImage(image.id)}
+                      className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/60 text-[10px] text-white opacity-0 transition group-hover:opacity-100"
+                    >
+                      <CloseOutlined />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex min-h-14 w-full items-center gap-1 rounded-2xl border border-[#3a3369] bg-[#18182b] px-2 py-2 shadow-[0_12px_40px_rgba(0,0,0,0.22)] focus-within:border-[#7b61dd]">
+              <button
+                type="button"
+                aria-label="上传图片"
+                title="上传图片"
+                onClick={openImagePicker}
+                disabled={isSending}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-[#2a2550] hover:text-[#b58cff] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <PictureOutlined />
+              </button>
               <textarea
                 value={input}
                 onChange={(event) => handleInputChange(event.target.value)}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 rows={1}
                 placeholder={
                   isSending
                     ? "正在等待回复..."
-                    : "输入消息...（Enter 发送，Shift+Enter 换行）"
+                    : "输入消息，或粘贴/上传图片...（Enter 发送，Shift+Enter 换行）"
                 }
-                className="max-h-36 min-h-14 w-full resize-none rounded-2xl border border-[#3a3369] bg-[#18182b] py-4 pl-4 pr-14 text-sm leading-6 text-slate-100 shadow-[0_12px_40px_rgba(0,0,0,0.22)] outline-none placeholder:text-slate-500 focus:border-[#7b61dd]"
+                className="max-h-36 min-h-6 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-500"
               />
               <button
                 type="button"
                 aria-label="发送"
                 title="发送"
                 onClick={sendMessage}
-                disabled={!input.trim() || isSending}
-                className="absolute bottom-4 right-3 grid h-8 w-8 place-items-center rounded-full bg-[#332c68] text-slate-300 transition enabled:hover:bg-[#7b61dd] enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!canSend}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#332c68] text-slate-300 transition enabled:hover:bg-[#7b61dd] enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <SendOutlined />
               </button>

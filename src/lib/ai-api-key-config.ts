@@ -15,7 +15,7 @@ export const invalidateCustomAiRequestConfigCache = (): void => {
 };
 
 export const fetchApiKeyConfig = async (): Promise<WebAiApiKeyConfig> => {
-  return apiRequest<WebAiApiKeyConfig>("/web/ai/api-key-config");
+  return apiRequest.get<WebAiApiKeyConfig>("/web/ai/api-key-config");
 };
 
 export const saveApiKeyConfig = async (
@@ -23,20 +23,15 @@ export const saveApiKeyConfig = async (
   model: string,
   apiKeyToken?: string,
 ): Promise<WebAiApiKeyConfig> => {
-  return apiRequest<WebAiApiKeyConfig>("/web/ai/api-key-config", {
-    method: "PUT",
-    body: JSON.stringify({
-      requestUrl: requestUrl.trim(),
-      model: model.trim(),
-      ...(apiKeyToken?.trim() ? { apiKeyToken: apiKeyToken.trim() } : {}),
-    }),
+  return apiRequest.put<WebAiApiKeyConfig>("/web/ai/api-key-config", {
+    requestUrl: requestUrl.trim(),
+    model: model.trim(),
+    ...(apiKeyToken?.trim() ? { apiKeyToken: apiKeyToken.trim() } : {}),
   });
 };
 
 export const deleteApiKeyConfig = async (): Promise<WebAiApiKeyConfig> => {
-  return apiRequest<WebAiApiKeyConfig>("/web/ai/api-key-config", {
-    method: "DELETE",
-  });
+  return apiRequest.delete<WebAiApiKeyConfig>("/web/ai/api-key-config");
 };
 
 export const migrateLegacyLocalSettings = async (): Promise<boolean> => {

@@ -1,12 +1,28 @@
-import { useState, useRef, useEffect } from "react";
-import type { KeyboardEvent } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import type { ChangeEvent, ClipboardEvent, KeyboardEvent } from "react";
 
-type ChatMessage = {
-  id: number;
-  role: "user" | "assistant";
-  content: string;
-  reasoning?: string;
-};
+import { http } from "@/lib/api-client";
+import { invalidateCustomAiRequestConfigCache } from "@/lib/ai-api-key-config";
+import {
+  createPendingChatImage,
+  extractImagesFromClipboard,
+  resolveImageContentParts,
+  revokePendingChatImage,
+  validateChatImageBatch,
+  type PendingChatImage,
+} from "@/lib/ai-chat-image";
+import {
+  toChatMessagePayload,
+  type ChatMessage,
+  type ChatMessageImage,
+} from "@/lib/ai-chat-message";
+import type { ChatContentPart } from "@/types/ai-chat";
+
+import {
+  extractStreamDelta,
+  extractStreamErrorMessage,
+  extractStreamReasoning,
+} from "@/lib/stream-delta";
 
 type Conversation = {
   id: number;
@@ -35,18 +51,6 @@ type WebAiChatStreamEvent = {
 type WebAiChatStreamError = {
   message?: string;
 };
-
-import { invalidateCustomAiRequestConfigCache } from "@/lib/ai-api-key-config";
-import { getAccessToken } from "@/lib/auth-token";
-
-import {
-  extractStreamDelta,
-  extractStreamErrorMessage,
-  extractStreamReasoning,
-} from "@/lib/stream-delta";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
-const CHAT_STREAM_URL = `${API_BASE_URL.replace(/\/$/, "")}/web/ai/chat/stream`;
 
 const createMessageId = () => Date.now() + Math.random();
 
@@ -100,9 +104,39 @@ const getErrorMessage = (value: unknown) => {
   return "AI 对话接口暂时不可用，请稍后再试。";
 };
 
+const mapImagePartsToMessageImages = (
+  pendingImages: PendingChatImage[],
+  imageParts: ChatContentPart[],
+): ChatMessageImage[] =>
+  pendingImages.map((pending, index) => {
+    const part = imageParts[index];
+    const image: ChatMessageImage = {
+      previewUrl: pending.previewUrl,
+    };
+
+    if (part?.type === "image_url") {
+      image.url = part.image_url;
+    }
+
+    if (part?.type === "image_file_id") {
+      image.fileId = part.image_file_id;
+    }
+
+    if (part?.type === "image_base64") {
+      image.base64 = part.image_base64;
+    }
+
+    return image;
+  });
+
+const clearPendingImages = (images: PendingChatImage[]) => {
+  images.forEach(revokePendingChatImage);
+};
+
 const useAiassistant = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [input, setInput] = useState("");
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversations, setConversations] =
     useState<Conversation[]>(initialConversations);
@@ -112,14 +146,16 @@ const useAiassistant = () => {
   const [error, setError] = useState("");
   const messageEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasMessages = messages.length > 0;
+  const canSend =
+    (input.trim().length > 0 || pendingImages.length > 0) && !isSending;
 
   const handleInputChange = (value: string) => {
     setInput(value);
   };
 
-  //是否展开侧边栏
   const toggleSidebar = () => {
     setSidebarOpen((value) => !value);
   };
@@ -136,21 +172,89 @@ const useAiassistant = () => {
     invalidateCustomAiRequestConfigCache();
   };
 
-  //点击历史对话列表
   const handleConversationClick = (conversationId: number) => {
     setActiveConversationId(conversationId);
-    // setMessages(messages.filter((message) => message.role === "assistant"));
+  };
+
+  const openImagePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const removePendingImage = useCallback((imageId: string) => {
+    setPendingImages((current) => {
+      const target = current.find((item) => item.id === imageId);
+
+      if (target) {
+        revokePendingChatImage(target);
+      }
+
+      return current.filter((item) => item.id !== imageId);
+    });
+  }, []);
+
+  const pendingImagesRef = useRef(pendingImages);
+  pendingImagesRef.current = pendingImages;
+
+  const appendPendingImages = useCallback((files: File[]) => {
+    if (files.length === 0) {
+      return false;
+    }
+
+    const validationError = validateChatImageBatch(
+      files,
+      pendingImagesRef.current.length,
+    );
+
+    if (validationError) {
+      setError(validationError);
+      return false;
+    }
+
+    setError("");
+    setPendingImages((current) => [
+      ...current,
+      ...files.map((file) => createPendingChatImage(file)),
+    ]);
+
+    return true;
+  }, []);
+
+  const handleImageFilesSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    const fileList = event.target.files;
+
+    if (!fileList?.length) {
+      return;
+    }
+
+    appendPendingImages(Array.from(fileList));
+    event.target.value = "";
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (isSending) {
+      return;
+    }
+
+    const imageFiles = extractImagesFromClipboard(event.clipboardData);
+
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    appendPendingImages(imageFiles);
   };
 
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
+      pendingImagesRef.current.forEach(revokePendingChatImage);
     };
   }, []);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages]);
+  }, [messages, pendingImages]);
 
   const startNewConversation = () => {
     abortControllerRef.current?.abort();
@@ -161,6 +265,10 @@ const useAiassistant = () => {
       updatedAt: "刚刚",
     };
 
+    setPendingImages((current) => {
+      clearPendingImages(current);
+      return [];
+    });
     setConversations((current) => [nextConversation, ...current]);
     setActiveConversationId(nextConversation.id);
     setMessages([]);
@@ -171,15 +279,31 @@ const useAiassistant = () => {
 
   const sendMessage = async () => {
     const content = input.trim();
+    const imagesToSend = pendingImages;
 
-    if (!content || isSending) {
+    if ((!content && imagesToSend.length === 0) || isSending) {
       return;
     }
 
+    setIsSending(true);
+    setError("");
+
+    let imageParts: ChatContentPart[] = [];
+
+    try {
+      imageParts = await resolveImageContentParts(imagesToSend);
+    } catch (exception) {
+      setIsSending(false);
+      setError(getErrorMessage(exception));
+      return;
+    }
+
+    const messageImages = mapImagePartsToMessageImages(imagesToSend, imageParts);
     const userMessage: ChatMessage = {
       id: createMessageId(),
       role: "user",
       content,
+      images: messageImages.length > 0 ? messageImages : undefined,
     };
 
     const assistantMessage: ChatMessage = {
@@ -189,21 +313,25 @@ const useAiassistant = () => {
       reasoning: "",
     };
 
-    const requestMessages = [...messages, userMessage].map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
+    const requestMessages = [...messages, userMessage].map(toChatMessagePayload);
 
     setMessages((current) => [...current, userMessage, assistantMessage]);
     setInput("");
-    setError("");
-    setIsSending(true);
+    setPendingImages((current) => {
+      clearPendingImages(current);
+      return [];
+    });
+
+    const conversationTitle =
+      content.slice(0, 18) ||
+      (imagesToSend.length > 0 ? `图片对话（${imagesToSend.length}张）` : "新的对话");
+
     setConversations((current) =>
       current.map((conversation) =>
         conversation.id === activeConversationId
           ? {
               ...conversation,
-              title: content.slice(0, 18),
+              title: conversationTitle,
               updatedAt: "刚刚",
             }
           : conversation,
@@ -214,23 +342,20 @@ const useAiassistant = () => {
     abortControllerRef.current = controller;
 
     try {
-      const accessToken = getAccessToken();
-      const response = await fetch(CHAT_STREAM_URL, {
-        method: "POST",
-        headers: {
-          Accept: "text/event-stream",
-          "Content-Type": "application/json",
-          ...(accessToken
-            ? { Authorization: `Bearer ${accessToken}` }
-            : {}),
-        },
-        body: JSON.stringify({
+      const response = await http.post<Response>(
+        "/web/ai/chat/stream",
+        {
           messages: requestMessages,
           reasoningEffort: "none",
-        }),
-        credentials: "omit",
-        signal: controller.signal,
-      });
+        },
+        {
+          responseType: "raw",
+          showLoading: false,
+          retry: 0,
+          headers: { Accept: "text/event-stream" },
+          signal: controller.signal,
+        },
+      );
 
       if (!response.ok || !response.body) {
         throw new Error(`AI 对话接口请求失败（${response.status}）`);
@@ -334,18 +459,25 @@ const useAiassistant = () => {
   return {
     sidebarOpen,
     input,
+    pendingImages,
     messages,
     conversations,
     activeConversationId,
     messageEndRef,
+    fileInputRef,
     hasMessages,
     isSending,
+    canSend,
     settingsOpen,
     error,
     startNewConversation,
     sendMessage,
     handleKeyDown,
     handleInputChange,
+    openImagePicker,
+    handleImageFilesSelected,
+    handlePaste,
+    removePendingImage,
     toggleSidebar,
     openSettings,
     closeSettings,
@@ -353,4 +485,5 @@ const useAiassistant = () => {
     handleConversationClick,
   };
 };
+
 export default useAiassistant;

@@ -6,6 +6,7 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { getPostLoginRedirect } from "@/lib/auth-session";
 import { getAccessToken } from "@/lib/auth-token";
 
 import {
@@ -25,7 +26,7 @@ const LoginPage = () => {
 
   useEffect(() => {
     if (getAccessToken()) {
-      router.replace("/" as Route);
+      router.replace(getPostLoginRedirect() as Route);
     }
   }, [router]);
   const [loading, setLoading] = useState(false);
@@ -37,7 +38,7 @@ const LoginPage = () => {
 
     try {
       await loginWebUser(values);
-      router.replace("/" as Route);
+      router.replace(getPostLoginRedirect() as Route);
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : "登录失败");
     } finally {
@@ -56,7 +57,7 @@ const LoginPage = () => {
 
     try {
       await registerWebUser(values);
-      router.replace("/" as Route);
+      router.replace(getPostLoginRedirect() as Route);
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : "注册失败");
     } finally {
