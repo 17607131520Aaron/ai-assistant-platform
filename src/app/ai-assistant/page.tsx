@@ -22,6 +22,7 @@ import { clearAccessToken } from "@/lib/auth-token";
 
 import { CHAT_IMAGE_ACCEPT } from "@/lib/ai-chat-image";
 
+import AiMessageContent from "./ai-message-content";
 import AiSettingsDialog from "./ai-settings-dialog";
 import useAiassistant from "./use-ai-assistannt";
 
@@ -180,7 +181,7 @@ const AppPages: React.FC = () => {
             </div>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-[#080819]">
+          <div className="chat-scrollbar min-h-0 flex-1 overflow-y-auto bg-[#080819]">
             {hasMessages ? (
               <div className="flex min-h-full w-full flex-col justify-end px-5 py-6 sm:px-8 lg:px-12 lg:py-8">
                 <div className="flex flex-col gap-6">
@@ -194,21 +195,23 @@ const AppPages: React.FC = () => {
                     return (
                       <div
                         key={message.id}
-                        className={`flex items-end gap-3 ${
-                          isUser ? "justify-end" : "justify-start"
+                        className={`flex gap-3 ${
+                          isUser
+                            ? "items-end justify-end"
+                            : "items-start justify-start"
                         }`}
                       >
                         {!isUser && (
-                          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[#34325d] bg-[#20203a] text-xs font-semibold text-[#b69cff]">
+                          <div className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[#34325d] bg-[#20203a] text-xs font-semibold text-[#b69cff]">
                             <RobotOutlined />
                           </div>
                         )}
                         <article
-                          className={`max-w-[min(78%,720px)] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${
+                          className={
                             isUser
-                              ? "rounded-br-md border border-[#6d55c8]/60 bg-[#3a2a65] text-slate-50"
-                              : "rounded-bl-md border border-[#2c2b48] bg-[#17172b] text-slate-300"
-                          }`}
+                              ? "max-w-[min(78%,720px)] rounded-2xl rounded-br-md border border-[#6d55c8]/60 bg-[#3a2a65] px-4 py-3 text-sm leading-6 text-slate-50 shadow-sm"
+                              : "min-w-0 w-full max-w-3xl flex-1 rounded-2xl rounded-bl-md border border-[#2c2b48] bg-[#17172b] px-4 py-3 text-sm text-slate-300 shadow-sm sm:max-w-4xl"
+                          }
                         >
                           {isUser && message.images && message.images.length > 0 && (
                             <div
@@ -234,35 +237,44 @@ const AppPages: React.FC = () => {
                             </div>
                           )}
                           {!isUser && message.reasoning && (
-                            <details className="mb-3 rounded-lg border border-[#2a2948] bg-[#10101f] px-3 py-2">
+                            <details className="mb-4 rounded-lg border border-[#2a2948] bg-[#0c0c1a] px-3 py-2">
                               <summary className="cursor-pointer select-none text-xs text-slate-500">
                                 思考过程
                               </summary>
-                              <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">
-                                {message.reasoning}
-                              </p>
+                              <div className="mt-2 text-xs leading-5 text-slate-500">
+                                <AiMessageContent
+                                  compact
+                                  content={message.reasoning}
+                                />
+                              </div>
                             </details>
                           )}
-                          {(message.content ||
-                            (!isUser &&
-                              !message.reasoning &&
-                              !message.images?.length)) && (
-                            <p className="whitespace-pre-wrap break-words">
-                              {message.content ||
-                                (isUser
-                                  ? ""
-                                  : message.reasoning
-                                    ? ""
-                                    : "正在生成回复...")}
-                            </p>
-                          )}
-                          {isStreamingAssistant &&
-                            !message.content &&
-                            message.reasoning && (
-                              <p className="mt-1 text-xs text-slate-500">
-                                正在组织最终回复...
+                          {isUser ? (
+                            message.content && (
+                              <p className="whitespace-pre-wrap break-words">
+                                {message.content}
                               </p>
-                            )}
+                            )
+                          ) : (
+                            <>
+                              <AiMessageContent
+                                content={message.content}
+                                isStreaming={isStreamingAssistant}
+                                placeholder={
+                                  message.reasoning
+                                    ? undefined
+                                    : "正在生成回复..."
+                                }
+                              />
+                              {isStreamingAssistant &&
+                                !message.content &&
+                                message.reasoning && (
+                                  <p className="mt-2 text-xs text-slate-500">
+                                    正在组织最终回复...
+                                  </p>
+                                )}
+                            </>
+                          )}
                         </article>
                       </div>
                     );

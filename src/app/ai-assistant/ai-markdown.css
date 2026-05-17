@@ -1,0 +1,20 @@
+/* 仅 AI Markdown 渲染需要：让 Tailwind 扫描 Streamdown 内置类名，避免打入全局 globals */
+
+/* @source "../../node_modules/streamdown/dist/*.js";
+@source "../../node_modules/@streamdown/code/dist/*.js"; */
+
+@source "streamdown/dist/*.js";
+@source "@streamdown/code/dist/*.js";
+
+@theme inline {
+  /* Streamdown 语义色（bg-muted、border-border 等） */
+  --color-background: #17172b;
+  --color-foreground: #cbd5e1;
+  --color-muted: #252641;
+  --color-muted-foreground: #94a3b8;
+  --color-border: #2c2b48;
+  --color-primary: #b58cff;
+  --color-primary-foreground: #17172b;
+  --color-card: #17172b;
+  --color-sidebar: #1a1a30;
+}
